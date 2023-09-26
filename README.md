@@ -19,3 +19,12 @@ touch config.json
 ```
 
 Remember customize your config file and happy syncing 🤘
+
+## Service Create
+
+for windows:
+`sc.exe create git-auto-push binPath=C:\Users\svtter\Documents\GitHub\git-auto-push\git-auto-push.exe`
+
+default path:
+    D:/auto-config.json
+    D:/auto-push.log
