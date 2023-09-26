@@ -202,9 +202,9 @@ func autoPush(repos []Repository, isCommit bool) {
 	}
 	os.Chdir(oriDir)
 	if len(success) == 0 {
-		fmt.Println("No repository pushed")
+		log.Println("No repository pushed")
 		return
 	}
 	s := strings.Join(success, "\n")
-	fmt.Printf("Successfully pushed repositories: %s\n", s)
+	log.Printf("Successfully pushed repositories: %s\n", s)
 }
