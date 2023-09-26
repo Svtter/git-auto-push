@@ -3,7 +3,7 @@ package main
 import (
 	"encoding/json"
 	"fmt"
-	"io/ioutil"
+	"io"
 	"log"
 	"os"
 	"os/exec"
@@ -15,23 +15,24 @@ import (
 type Repository struct {
 	Path   string `json:"path"`
 	Remote string `json:"remote"`
-	Branch string `json: "branch"`
+	Branch string `json:"branch"`
 }
 
 type Config struct {
 	Repositories []Repository `json:"repositories"`
-	IsCommit bool `json:"isCommit"`
+	IsCommit     bool         `json:"isCommit"`
 	Interval     int          `json:"interval"`
 }
 
 func main() {
-	f, err := os.OpenFile("config.json", os.O_RDONLY, 0766)
+	dirname, _ := os.UserHomeDir()
+	f, err := os.OpenFile(dirname+"/.config/git-auto-push-config.json", os.O_RDONLY, 0766)
 	if err != nil {
 		log.Fatalf("failed to open config file, err: %+v\n", err)
 	}
 	defer f.Close()
 
-	bs, err := ioutil.ReadAll(f)
+	bs, err := io.ReadAll(f)
 	if err != nil {
 		log.Fatalf("failed to read config file, err: %+v\n", err)
 	}
@@ -99,7 +100,7 @@ func autoPush(repos []Repository, isCommit bool) {
 			continue
 		}
 
-		if (isCommit && autoCommit(repo)) {
+		if isCommit && autoCommit(repo) {
 			continue
 		}
 
