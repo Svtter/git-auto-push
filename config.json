@@ -1,15 +1,11 @@
 {
     "interval": 10,
+    "isCommit": false,
     "repositories": [
         {
-            "path": "/path/to/your/local/repository1",
+            "path": "C:/Users/svtter/Documents/GitHub/logseq-database",
             "remote": "origin",
             "branch": "main"
-        },
-        {
-            "path": "/path/to/your/local/repository2",
-            "remote": "origin",
-            "branch": "master"
         }
     ]
 }

@@ -20,6 +20,7 @@ type Repository struct {
 
 type Config struct {
 	Repositories []Repository `json:"repositories"`
+	IsCommit bool `json:"isCommit"`
 	Interval     int          `json:"interval"`
 }
 
@@ -45,12 +46,29 @@ func main() {
 		itvl = 10
 	}
 	for {
-		autoPush(repos)
+		autoPush(repos, c.IsCommit)
 		time.Sleep(time.Duration(itvl) * time.Second)
 	}
 }
 
-func autoPush(repos []Repository) {
+func autoCommit(repo Repository) (isContinue bool) {
+	cmd := exec.Command("git", "add", ".")
+	bs, err := cmd.Output()
+	if err != nil {
+		log.Printf("ERROR: failed to run 'git add', err: %+v, path: %s, output: %s\n", err, repo.Path, string(bs))
+		return true
+	}
+	curTime := time.Now().Format("2006/01/02 15:04:05")
+	cmd = exec.Command("git", "commit", "-m", fmt.Sprintf("%s auto commit", curTime))
+	bs, err = cmd.Output()
+	if err != nil {
+		log.Printf("ERROR: failed to run 'git commit', err: %+v, path: %s, output: %s\n", err, repo.Path, string(bs))
+		return true
+	}
+	return false
+}
+
+func autoPush(repos []Repository, isCommit bool) {
 	ex, err := os.Executable()
 	if err != nil {
 		log.Fatalf("failed to find current working dir, err: %+v\n", err)
@@ -81,22 +99,12 @@ func autoPush(repos []Repository) {
 			continue
 		}
 
-		cmd := exec.Command("git", "add", ".")
-		bs, err := cmd.Output()
-		if err != nil {
-			log.Printf("ERROR: failed to run 'git add', err: %+v, path: %s, output: %s\n", err, repo.Path, string(bs))
-			continue
-		}
-		curTime := time.Now().Format("2006/01/02 15:04:05")
-		cmd = exec.Command("git", "commit", "-m", fmt.Sprintf("%s auto commit", curTime))
-		bs, err = cmd.Output()
-		if err != nil {
-			log.Printf("ERROR: failed to run 'git commit', err: %+v, path: %s, output: %s\n", err, repo.Path, string(bs))
+		if (isCommit && autoCommit(repo)) {
 			continue
 		}
 
-		cmd = exec.Command("git", "push", repo.Remote, repo.Branch)
-		bs, err = cmd.Output()
+		cmd := exec.Command("git", "push", repo.Remote, repo.Branch)
+		bs, err := cmd.Output()
 		if err != nil {
 			log.Printf("ERROR: failed to run 'git push', err: %+v, path: %s, output: %s\n", err, repo.Path, string(bs))
 			continue
