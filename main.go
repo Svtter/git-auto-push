@@ -4,7 +4,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
-	"log"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -13,6 +12,7 @@ import (
 	"time"
 
 	"github.com/judwhite/go-svc"
+	"golang.org/x/sys/windows/svc/eventlog"
 )
 
 type Repository struct {
@@ -53,32 +53,31 @@ func CreateFile(name string) error {
 	return nil
 }
 
+var log *eventlog.Log
+
 func main() {
+	var err error
 	logfileName := "D:/auto-push.log"
+	log, err = eventlog.Open("git-auto-push")
+	if err != nil {
+		panic(fmt.Sprintf("error: %v", err))
+	}
 	if !FileExists(logfileName) {
 		CreateFile(logfileName)
 	}
-	f, err := os.OpenFile(logfileName, os.O_RDWR|os.O_CREATE|os.O_APPEND, 0666)
-	if err != nil {
-		log.Fatalf("error opening file: %v", err)
-	}
-	defer f.Close()
-	if err != nil {
-		log.Fatalf("error: %v", err)
-	}
 
 	// attempt #1
-	log.SetOutput(f)
 	prg := &program{}
 
 	// Call svc.Run to start your program/service.
 	if err := svc.Run(prg); err != nil {
-		log.Fatal(err)
+		log.Error(100, err.Error())
+		panic("svc.Run error")
 	}
 }
 
 func (p *program) Init(env svc.Environment) error {
-	log.Printf("is win service? %v\n", env.IsWindowsService())
+	log.Info(200, spt("is win service? %v\n", env.IsWindowsService()))
 	return nil
 }
 
@@ -91,13 +90,14 @@ func (p *program) Start() error {
 	p.wg.Add(1)
 	go start()
 	go func() {
-		log.Println("Starting...")
+		log.Info(200, "Starting...")
 		<-p.quit
-		log.Println("Quit signal received...")
+		log.Info(200, "Quit signal received...")
+		log.Close()
 		p.wg.Done()
 	}()
 
-	log.Println("Not block!")
+	log.Info(200, "Not block!")
 	return nil
 }
 
@@ -106,29 +106,34 @@ func (p *program) Stop() error {
 	// This method may block, but it's a good idea to finish quickly or your process may be killed by
 	// Windows during a shutdown/reboot. As a general rule you shouldn't rely on graceful shutdown.
 
-	log.Println("Stopping...")
+	log.Info(200, "Stopping...")
 	close(p.quit)
 	p.wg.Wait()
-	log.Println("Stopped.")
+	log.Info(200, "Stopped.")
 	return nil
 }
+
+var spt = fmt.Sprintf
 
 func start() {
 	f, err := os.OpenFile("D:/auto-config.json", os.O_RDONLY, 0766)
 	if err != nil {
-		log.Fatalf("failed to open config file, err: %+v\n", err)
+		log.Error(100, fmt.Sprintf("failed to open config file, err: %+v\n", err))
+		panic("error")
 	}
 	defer f.Close()
 
 	bs, err := io.ReadAll(f)
 	if err != nil {
-		log.Fatalf("failed to read config file, err: %+v\n", err)
+		log.Error(100, spt("failed to read config file, err: %+v\n", err))
+		panic("error")
 	}
 
 	var c Config
 	err = json.Unmarshal(bs, &c)
 	if err != nil {
-		log.Fatalf("failed to decode config file, err: %+v\n", err)
+		log.Error(100, spt("failed to decode config file, err: %+v\n", err))
+		panic("error")
 	}
 	itvl, repos := c.Interval, c.Repositories
 	if itvl == 0 {
@@ -144,14 +149,14 @@ func autoCommit(repo Repository) (isContinue bool) {
 	cmd := exec.Command("git", "add", ".")
 	bs, err := cmd.Output()
 	if err != nil {
-		log.Printf("ERROR: failed to run 'git add', err: %+v, path: %s, output: %s\n", err, repo.Path, string(bs))
+		log.Info(101, spt("ERROR: failed to run 'git add', err: %+v, path: %s, output: %s\n", err, repo.Path, string(bs)))
 		return true
 	}
 	curTime := time.Now().Format("2006/01/02 15:04:05")
 	cmd = exec.Command("git", "commit", "-m", fmt.Sprintf("%s auto commit", curTime))
 	bs, err = cmd.Output()
 	if err != nil {
-		log.Printf("ERROR: failed to run 'git commit', err: %+v, path: %s, output: %s\n", err, repo.Path, string(bs))
+		log.Info(101, spt("ERROR: failed to run 'git commit', err: %+v, path: %s, output: %s\n", err, repo.Path, string(bs)))
 		return true
 	}
 	return false
@@ -160,7 +165,8 @@ func autoCommit(repo Repository) (isContinue bool) {
 func autoPush(repos []Repository, isCommit bool) {
 	ex, err := os.Executable()
 	if err != nil {
-		log.Fatalf("failed to find current working dir, err: %+v\n", err)
+		log.Error(100, spt("failed to find current working dir, err: %+v\n", err))
+		panic("stop")
 	}
 	oriDir := filepath.Dir(ex)
 	var success []string
@@ -168,23 +174,23 @@ func autoPush(repos []Repository, isCommit bool) {
 		repo := repos[i]
 		p := repo.Path
 		if len(p) == 0 {
-			log.Println("WARNING: encounter an empty path")
+			log.Info(200, "WARNING: encounter an empty path")
 			continue
 		}
 
 		s, err := os.Stat(p)
 		if err != nil {
-			log.Printf("ERROR: failed to get directory stat, err: %+v, path: %s\n", err, repo.Path)
+			log.Error(101, spt("ERROR: failed to get directory stat, err: %+v, path: %s\n", err, repo.Path))
 			continue
 		}
 		if !s.IsDir() {
-			log.Printf("ERROR: %s is not a directory\n", repo.Path)
+			log.Error(101, spt("ERROR: %s is not a directory\n", repo.Path))
 			continue
 		}
 		os.Chdir(p)
 
 		if err != nil {
-			log.Printf("ERROR: failed to change working dir, err: %+v, path: %s\n", err, repo.Path)
+			log.Error(101, spt("ERROR: failed to change working dir, err: %+v, path: %s\n", err, repo.Path))
 			continue
 		}
 
@@ -195,16 +201,16 @@ func autoPush(repos []Repository, isCommit bool) {
 		cmd := exec.Command("git", "push", repo.Remote, repo.Branch)
 		bs, err := cmd.Output()
 		if err != nil {
-			log.Printf("ERROR: failed to run 'git push', err: %+v, path: %s, output: %s\n", err, repo.Path, string(bs))
+			log.Error(101, spt("ERROR: failed to run 'git push', err: %+v, path: %s, output: %s\n", err, repo.Path, string(bs)))
 			continue
 		}
 		success = append(success, repo.Path)
 	}
 	os.Chdir(oriDir)
 	if len(success) == 0 {
-		log.Println("No repository pushed")
+		log.Info(200, "No repository pushed")
 		return
 	}
 	s := strings.Join(success, "\n")
-	log.Printf("Successfully pushed repositories: %s\n", s)
+	log.Info(200, spt("Successfully pushed repositories: %s\n", s))
 }
